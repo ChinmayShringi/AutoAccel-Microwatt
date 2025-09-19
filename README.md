@@ -271,7 +271,6 @@ Per hackathon rules, **all AI involvement is disclosed and reproducible**:
 | WIDTH=16, STG=1 |  3,8k |    108,400 |      3.6 |       83.3 |        3.8 |
 | WIDTH=16, STG=2 |  4,4k |    122,900 |      5.1 |      111.0 |        4.4 |
 
-> Replace with real numbers from `synth/reports/` and OpenLane sign-off CSVs.
 
 ---
 
