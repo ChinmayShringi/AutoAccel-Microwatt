@@ -1,329 +1,172 @@
-# AutoAccel-Microwatt: AI-Assisted Accelerator Integration for the OpenPOWER Microwatt Core
-
-**Hackathon:** Microwatt Momentum — OpenPOWER HW Design Hackathon
-**Participant:** *Chinmay Shringi, MS Computer Engineering, NYU*
-**Advisors:** *Prof. Ramesh Karri (NYU) & Prof. Siddharth Garg (NYU)*
-**License:** MIT (see [LICENSE](./LICENSE))
-
-> **Abstract.** AutoAccel-Microwatt is a **reproducible, tapeout-oriented** project that integrates a **custom, domain-specific hardware accelerator** with the **Microwatt POWER** CPU core. The accelerator RTL and verification collaterals are **co-designed with Generative AI** (AutoChip/ChipChat), and validated using **LLM4Validation** (testbench & assertions), **Verilator** simulation, **Yosys/OpenLane** synthesis and PPA, and **STA/SDF** sign-off artifacts for SKY130. We follow an **LLM-in-the-loop** methodology (inspired by **VeriThoughts**), and document **all prompts and sessions** for auditability per hackathon rules. The design targets the **ChipFoundry OpenFrame User Project area**, passes **precheck**, and is prepared for **chipIgnite** submission.
-
----
-
-## Porposed Goals & Scope
-
-* **Theme fit:** “Microwatt for the open computing era.”
-* **Deliverable:** A **working, memory-mapped accelerator** integrated with Microwatt, complete with **functional verification, timing constraints, STA/SDF**, and **OpenLane results** for SKY130.
-* **Design choice:** A **parameterized 16-bit Multiply-Accumulate (MAC) accelerator** (baseline) with **optional FIR** datapath variant. Rationale:
-
-  * Demonstrates **sensor/edge-compute** value (dense integer ops).
-  * Small footprint to **fit OpenFrame** area while leaving routing margin.
-  * Enables clear **PPA trade-off** studies (bit-width, pipeline depth).
----
-
-## Methodology (Gen-AI + EDA)
-
-We align with **Prof. Karri & Prof. Garg’s** *LLM4ChipDesign* modules:
-
-* **AutoChip / ChipChat (LLM4Verilog):** NL prompt → synthesizable RTL, testbench scaffolds.
-* **LLM4Validation:** Auto-TB, corner-case vectors, scoreboard stubs.
-* **VeriThoughts-style Loop:** LLM explains logic, we add **assertions/invariants**, re-prompt until formal/semantic checks pass.
-* **NL2SVA (optional):** Key English requirements → SystemVerilog Assertions.
-* **Security hygiene (LLM4Security mindset):** Lint checks, Trojan antipattern scan prompts, IP provenance notes.
-
-All **LLM prompts and transcripts are versioned** in `ai_logs/`.
-
----
-
-## High-Level Architecture
-<img width="934" height="359" alt="image" src="https://github.com/user-attachments/assets/065d9a31-eab7-48f9-9653-d239fb82b4af" />
-
-
-**Interface.** The accelerator is exposed as a **memory-mapped peripheral** on the Microwatt SoC bus via a compact **MMIO register file**:
-
-* `CTRL` (start/clear/irq-mask), `STAT` (busy/done/ovf),
-* `A`, `B` (operands), `ACCUM` (read/write), `CFG` (mode/precision),
-* `RES` (latched result), `IRQ` (optional completion interrupt).
-
-> *Note:* Microwatt system integration uses a simple **memory-mapped interconnect**; the glue (`mmio_adapter.v`) provides address decode, ready/valid, and strobes. This keeps the hackathon scope tractable and bus-agnostic.
-
----
-
-## Proposed Repository Layout
-
-```
-.
-├── rtl/
-│   ├── autoaccel_mac.v                 # Accelerator (LLM-generated + reviewed)
-│   ├── autoaccel_fir.v                 # Optional FIR datapath
-│   ├── mmio_adapter.v                  # Address decode + register file
-│   ├── top_openframe_user.v            # OpenFrame user top wrapper
-│   └── microwatt_glue.v                # Minimal glue to Microwatt SoC
-├── tb/
-│   ├── tb_autoaccel.sv                 # LLM4Validation-generated testbench
-│   ├── drivers/accel_driver.sv         # MMIO sequences
-│   └── vectors/                        # Directed + random vectors
-├── sva/                                # (optional) NL2SVA assertions
-│   └── properties.sv
-├── sim/
-│   ├── Makefile
-│   ├── verilator.mk
-│   └── run.sh                          # Runs and dumps VCD/FSDB
-├── synth/
-│   ├── yosys.tcl                       # Techmap + synth script
-│   ├── constraints.sdc                 # STA constraints
-│   └── reports/                        # Area/timing/utilization
-├── openlane/
-│   ├── config.tcl                      # OpenLane config (SKY130)
-│   ├── pin_order.cfg
-│   ├── macro.cfg
-│   └── runs/                           # PnR logs, DEF, GDS, SPEF, SDF
-├── precheck/
-│   └── precheck.cfg                    # ChipFoundry/chipIgnite precheck cfg
-├── sw/
-│   ├── examples/accel_demo.c           # POWER GCC demo (MMIO usage)
-│   └── linker.ld                       # Memory map if needed
-├── ai_logs/                            # All LLM prompts/sessions (markdown)
-│   ├── 2025-09-19_design_prompt.md
-│   └── 2025-09-19_tb_prompt.md
-├── docker/
-│   ├── Dockerfile                      # Verilator + Yosys + OpenLane CLI
-│   └── compose.yml
-├── scripts/
-│   ├── gen_prompt_template.md          # Prompt boilerplates
-│   ├── collect_ai_logs.sh              # Export chat logs → md/json
-│   ├── make_sdf_bundle.sh              # Gather SDF+SDC+netlist for sim
-│   └── ci_precheck.sh                  # Lint + precheck + smoke sims
-├── README.md
-└── LICENSE
-```
-
----
-
-## Build & Reproducibility
+# AI-Driven End-to-End Chip Design and Verification Pipeline
 
-### Toolchain (Docker-first)
+## Introduction
 
-We provide a **single container** with Verilator, Yosys, OpenSTA, OpenLane (SKY130), GCC-POWER (for bare-metal demo), and GTKWave.
+Modern chip design typically requires translating high-level specifications into hardware description language (HDL) code, followed by extensive verification, security checks, and physical implementation. Traditionally, this process is **labor-intensive and error-prone**, even for experts with decades of experience[\[1\]](https://arxiv.org/html/2311.04887v2#:~:text=Traditionally%2C%20designs%20are%20written%20in,We%20evaluate)[\[2\]](https://arxiv.org/html/2508.20030v1#:~:text=Electronic%20Design%20Automation%20,intensive%20tasks%20in). Recent advances in **Large Language Models (LLMs)** have opened new opportunities to automate and accelerate many stages of this workflow[\[3\]](https://arxiv.org/html/2508.20030v1#:~:text=Recent%20studies%20show%20that%20applying,and%20manufacturing%20of%20electronic%20systems). Researchers and industry practitioners are now leveraging LLMs for tasks ranging from **HDL generation** to **testbench creation**, **security vulnerability detection**, and even **analog circuit design**.
 
-```bash
-# 1) Build tools container
-docker build -f docker/Dockerfile -t autoaccel-dev:latest .
+In this report, we outline a comprehensive **LLM-powered chip design pipeline** that builds on existing tools and research (e.g., *AutoChip* and *Chip-Chat*) and integrates specialized modules we term **LLM4Verilog, LLM4Validation, LLM4Security, LLM4HLS,** and **LLM4Analog**. The goal is to enable an end-to-end flow where an LLM (or a coordinated set of LLM agents) can:
 
-# 2) Run container with repo mounted
-docker run --rm -it -v $PWD:/work -w /work autoaccel-dev:latest /bin/bash
-```
+* **Generate** initial RTL (Verilog/VHDL) code from specifications (LLM4Verilog).
 
-> Native installs are also possible; see `docker/Dockerfile` for exact versions/patches.
+* **Validate** and refine the design via iterative simulation feedback, generate testbenches and assertions (LLM4Validation).
 
-### Simulation (Verilator)
+* **Analyze** the design for security vulnerabilities and suggest fixes (LLM4Security).
 
-```bash
-cd sim
-make clean all       # compiles RTL+TB into Verilated model
-./run.sh             # runs, produces ./waves/autoaccel.vcd and ./logs/*
-gtkwave waves/autoaccel.vcd &
-```
+* Optionally, **synthesize** higher-level algorithmic descriptions (e.g. C/C++) into HDL (LLM4HLS).
 
-* **Pass criteria:** TB completes with all checks green; scoreboard matches reference model; basic back-pressure & reset sequences validated.
+* Optionally, **translate** analog circuit schematics or descriptions into netlists (LLM4Analog).
 
-### Synthesis (Yosys → OpenLane)
+Finally, the pipeline can drive the design through physical implementation and compare its performance on benchmarks against existing chip designs. We focus on factual, state-of-the-art approaches for each component. *(If a particular project or contest requires using a specific core like IBM’s* *Microwatt, an open-source 64-bit POWER CPU, as a reference design, this pipeline can be applied and demonstrated on that core as discussed later.)*
 
-```bash
-# Synthesis & techmap (sky130_fd_sc_hd)
-cd synth
-yosys -s yosys.tcl
-# Outputs: synth/reports/{area.rpt,timing.rpt} synth/netlist/{top.v}
-```
+## LLM4Verilog: Automatic HDL Generation with Iterative Refinement
 
-**Key knobs** (edit in `yosys.tcl`): bit-width (`WIDTH`), pipeline stages (`STAGES`), clock period target.
+One of the core capabilities needed is translating natural language or high-level intent into correct Verilog/VHDL code. Early efforts like **VeriGen** showed that LLMs can generate Verilog from specs in a single shot, but often the output needs debugging[\[4\]](https://arxiv.org/html/2311.04887v2#:~:text=languages%20like%20C%20to%20target,first%20efforts%20in%20this%20area). Real hardware engineers iterate on code, using compiler errors and simulation failures to guide fixes[\[5\]](https://arxiv.org/html/2311.04887v2#:~:text=VeriGen%20and%20its%20ilk%20are,be%20refined%20over%20multiple%20iterations). A key advancement is *AutoChip*, a framework that **automates this iterative refinement** loop with an LLM[\[6\]](https://arxiv.org/html/2311.04887v2#:~:text=models%20,of%20those%20LLMs%2C%20and%20differing)[\[7\]](https://arxiv.org/html/2311.04887v2#:~:text=Image%3A%20Refer%20to%20caption%20Figure,improve%20accuracy%20at%20low%20cost). AutoChip begins with an English design prompt and an initial LLM-generated Verilog module, then repeatedly:
 
-### PnR & Sign-Off (OpenLane + STA/SDF)
+1. **Compiles** the code and runs testbenches,
 
-```bash
-cd openlane
-flow.tcl -design . -overwrite
-# Outputs under openlane/runs/<timestamp>:
-#  - results/{synthesis,placement,cts,route,signoff}
-#  - gds/<top>.gds, lef/<top>.lef, sdf/<top>.sdf, reports/*.rpt
-```
+2. **Collects** any errors or failing assertions, and
 
-* **Constraints:** `constraints.sdc` (clock, I/O delays).
-* **STA:** OpenSTA is run in sign-off; reports under `reports/signoff/`.
-* **SDF bundle:** `scripts/make_sdf_bundle.sh` collects `{netlist, sdf, sdc}` for back-annotated sim.
+3. **Feeds** that feedback into the LLM to prompt an improved version of the code.
 
-### Back-Annotated Simulation (SDF)
+This loop continues until the design passes all tests or a set iteration limit[\[8\]](https://arxiv.org/html/2311.04887v2#:~:text=In%20this%20paper%2C%20we%20design,prompts%20and%20responses%20to%20the). By leveraging compiler/simulator feedback instead of relying on a human, AutoChip achieved significantly higher functional correctness (passing \~89% of test cases, a 24.2% improvement over zero-shot generation) in benchmarks from HDLBits[\[9\]](https://arxiv.org/html/2311.04887v2#:~:text=errors%20and%20simulation%20messages%20to,source)[\[10\]](https://arxiv.org/html/2311.04887v2#:~:text=We%20assess%20AutoChip%E2%80%99s%20feedback,Our%20key%20contributions%20are). It also optimizes token usage by providing either full conversation history or just the latest error context (“succinct” mode) to fit within context windows[\[11\]](https://arxiv.org/html/2311.04887v2#:~:text=testbenches,parameter). In essence, **LLM4Verilog** in our pipeline will use such an approach: an LLM agent that can propose HDL code and automatically correct it via tool feedback until it meets the spec.
 
-```bash
-# Use the gate-level netlist + SDF to validate timing in sim
-cd sim
-make gatelevel SDF=../openlane/runs/<ts>/results/signoff/<top>.sdf
-./run.sh --gate --sdf ../openlane/runs/<ts>/results/signoff/<top>.sdf
-```
+In parallel, another paradigm called *Chip-Chat* has explored **conversational co-design** of hardware. In Chip-Chat, a human engineer works interactively with an LLM (ChatGPT-4) to design a processor, achieving what’s believed to be the world’s first **AI-written HDL taken to tape-out** (fabrication)[\[12\]](https://arxiv.org/abs/2305.13243#:~:text=faced%20and%20opportunities%20presented%20when,written%20HDL%20for%20tapeout). The Chip-Chat case study involved designing a novel 8-bit microprocessor (an accumulator-based CPU) via dialogue and guiding the LLM through hierarchical design tasks, ultimately producing a working chip that was fabricated in a 130nm process[\[13\]](https://arxiv.org/abs/2305.13243#:~:text=used%20interactively%2C%20we%20perform%20a,written%20HDL%20for%20tapeout). This demonstrated that an LLM can handle complex, real-world design constraints when steered through a conversation. Our pipeline can incorporate **conversational design refinement** as well – e.g. a *“ChipChat agent”* that allows engineers to query and tweak the design in natural language during the generation process, combining the strengths of human insight and LLM speed[\[14\]](https://arxiv.org/html/2311.04887v2#:~:text=generation%20LLMs,This%20wastes%20precious)[\[15\]](https://arxiv.org/html/2311.04887v2#:~:text=and%20size%20of%20hardware%20data,generated%20tapeout).
 
----
+Notably, other teams have proposed generating **multiple design candidates** to improve reliability. For example, techniques like *VRank* and *VFocus* exploit the probabilistic nature of LLMs by producing many Verilog variants, simulating each, and then ranking the candidates based on consistency with expected outputs[\[16\]](https://arxiv.org/html/2508.20030v1#:~:text=complex%20designs%C2%A0,and%20select%20the%20best%20design). The best candidate (e.g. the one that passes the most tests) can be selected, achieving higher likelihood of correctness than a single LLM attempt. This could be an extension to LLM4Verilog: instead of one pass or one iterative stream, spawn N parallel generation attempts for critical modules and pick the most robust design.
 
-## Design Details
+In summary, **LLM4Verilog will generate RTL code automatically** from specs, using iterative self-debugging (à la AutoChip) and possibly multi-model or multi-trial ensembling[\[17\]](https://arxiv.org/html/2311.04887v2#:~:text=Autochip%20leverages%20feedback%20from%20an,improve%20accuracy%20at%20low%20cost)[\[18\]](https://arxiv.org/html/2508.20030v1#:~:text=In%20front,and%20select%20the%20best%20design) to maximize the chances of correctness. The output is HDL ready for integration and verification.
 
-### Accelerator μArch (MAC baseline)
+## LLM4Validation: Automated Testbenches and Formal Checks
 
-* **Datapath:** `RES = ACCUM + (A * B)`; optional saturation/overflow flags.
-* **Configurable:** `WIDTH ∈ {8, 12, 16, 24}`, `STAGES ∈ {0,1,2}`.
-* **Control:** MMIO `CTRL.start` latches inputs; `STAT.done` asserted when result valid.
-* **Throughput/Latency:** With `STAGES=1`, 1-result/2-cycles; `STAGES=2`, 1-result/1-cycle steady-state (init bubbles).
-* **Area-delay tradeoffs** documented in `synth/reports/`.
+After obtaining an HDL design, the next crucial step is **verification** – ensuring the design behaves as intended in all scenarios. Seasoned verification engineers spend enormous effort writing testbenches, stimulus generators, checkers, and assertions (e.g., SystemVerilog Assertions, SVA) to validate RTL. Here, LLMs can dramatically reduce the grunt work by automatically producing these verification components and even triaging bug reports.
 
-### Memory Map (example)
+One example is **AutoBench**, an LLM-based testbench generator. AutoBench takes as input a description of the Design Under Test (DUT) and produces a comprehensive **self-checking testbench** with stimulus and expected outputs[\[19\]](https://arxiv.org/abs/2407.03891#:~:text=this%20challenge%2C%20we%20introduce%20AutoBench%2C,For%2075%20sequential). It employs a *hybrid testbench structure* and uses the LLM to create checkers that can validate output correctness during simulation[\[20\]](https://arxiv.org/abs/2407.03891#:~:text=this%20challenge%2C%20we%20introduce%20AutoBench%2C,evaluate%20the%20quality%20of%20generated). To gauge quality, the authors developed an evaluation framework that runs the generated testbenches and measures how many bugs or mismatches they catch. Impressively, AutoBench improved the testbench pass rate by 57% compared to naive LLM generation (zero-shot)[\[19\]](https://arxiv.org/abs/2407.03891#:~:text=this%20challenge%2C%20we%20introduce%20AutoBench%2C,For%2075%20sequential). On a suite of 75 sequential circuit benchmarks, AutoBench’s testbenches had over **3× higher success** in detecting issues versus baseline, demonstrating that prompt techniques and structured outputs can yield effective verification code[\[21\]](https://arxiv.org/abs/2407.03891#:~:text=using%20LLMs,this%20link%3A%20this%20https%20URL). In our pipeline, **LLM4Validation** can leverage such an approach to produce simulation testbenches automatically from the design spec or DUT description. This means generating input stimulus (including corner cases) and reference monitors or assertions to check the DUT’s behavior. For complex designs, the LLM could also create multiple test scenarios or even suggest coverage points.
 
-| Address | Name  | Dir | Desc                                  |
-| ------: | ----- | --- | ------------------------------------- |
-|    0x00 | CTRL  | W   | \[bit0]=start, \[1]=clr, \[2]=irq\_en |
-|    0x04 | STAT  | R   | \[bit0]=busy, \[1]=done, \[2]=ovf     |
-|    0x08 | A     | W   | Operand A                             |
-|    0x0C | B     | W   | Operand B                             |
-|    0x10 | ACCUM | R/W | Accumulator                           |
-|    0x14 | CFG   | R/W | width/pipeline mode (synth-cfg gated) |
-|    0x18 | RES   | R   | Result (latched)                      |
-|    0x1C | IRQ   | R   | (optional) IRQ status                 |
+Another tedious aspect of verification is writing **formal properties and assertions**. Here, LLMs have shown promising results by translating natural language specs into SystemVerilog Assertions. For instance, *LAAG-RV* (LLM Assisted Assertion Generation for RISC-V) used GPT-4 to generate SVA properties from textual specifications[\[22\]](https://arxiv.org/abs/2409.15281#:~:text=step%20in%20verifying%20Register%20Transfer,we%20developed%20test%20cases%20to). The process involved a feedback loop: initial assertions from the LLM were tested on the design (in that case, OpenTitan RISC-V modules), and failing assertions or uncovered behaviors were fed back into the LLM with refined prompts to correct the SVA[\[23\]](https://arxiv.org/abs/2409.15281#:~:text=validate%20the%20LLM,prone). This iterative prompting yielded mostly correct assertions that matched the design intent, **significantly simplifying the assertion writing process** for engineers[\[23\]](https://arxiv.org/abs/2409.15281#:~:text=validate%20the%20LLM,prone). Similarly, the industry has started to offer tools like *iSpec.ai* that claim to convert English spec sentences into SVA automatically[\[24\]](https://www.agnisys.com/blog/unlocking-the-power-of-system-verilog-assertions-with-ispec-ai/#:~:text=Unlocking%20the%20Power%20of%20System,with%20precision%20and%20accuracy). In our LLM4Validation module, the LLM can be tasked with generating formal assertions for key design properties (e.g., *“the cache coherence protocol never enters an invalid state”*), based on either the spec or by analyzing the HDL code to infer likely properties. These assertions can then be used in formal verification tools or as runtime checkers in simulation.
 
-> **Microwatt glue** maps this region into the SoC address space. Software demo in `sw/examples/accel_demo.c`.
+Beyond generating testbenches and assertions, LLMs can assist in **bug detection and explanation**. A noteworthy demonstration was in the **2025 Generative AI Chip Hackathon**, where one of the challenge tracks (sponsored by Google) provided buggy RTL designs and a testbench, and required participants to identify the bug automatically. The winning team’s LLM-based system was able to **autonomously detect logic bugs** by analyzing the code and the single provided testbench, then generating additional directed tests to isolate the problem[\[25\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=said). Their multi-agent solution created *diverse input sequences* and a segmented test generation strategy using only AI agents[\[25\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=said). It even provided explanations and suggested corrections for the issues, **without any human intervention in the loop**[\[26\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=The%20team%20also%20tackled%20the,suggest%20corrections%20without%20human%20intervention). This shows that an LLM can serve as a *verification engineer*, inspecting a given design, reasoning about why a test might be failing, and proposing a fix in HDL. In our pipeline, once LLM4Validation runs the tests, if any fail, we can invoke an LLM agent to analyze the waveforms or log (in natural language) and pinpoint the fault. This agent essentially plays the role of the human debugger, shortening the time to root-cause bugs.
 
----
+Taken together, **LLM4Validation will automate key verification tasks**: generating testbenches, creating assertions, and intelligently debugging failures. The result is faster, more thorough validation of the LLM-generated design, which is critical given that an AI-generated HDL might have subtle errors. By catching and fixing these early (potentially by looping back to LLM4Verilog for code fixes), we ensure the design meets its functional requirements before proceeding.
 
-## Verification Strategy
+## LLM4Security: Automated Hardware Security Analysis
 
-### LLM4Validation (Auto-TB)
+Security verification is a specialized subset of verification focused on detecting vulnerabilities like information leaks, unauthorized access, or hardware Trojans in the design. Engineers with decades of experience develop assertions and tests for known weakness patterns, but this is a time-consuming and expertise-heavy process. Here, an LLM tuned with hardware security knowledge can serve as a tireless analyst checking the design for suspect patterns.
 
-* TB skeleton produced via **ChipChat/AutoChip** from a **requirements prompt**.
-* Stimulus: directed (corner cases), random constrained, and **accumulator saturation** scenarios.
-* Scoreboard compares RTL vs **Python golden model** (embedded via DPI-C or inline C++ in Verilator harness).
+For example, researchers have introduced **BugWhisperer**, a framework that fine-tunes an LLM specifically for detecting security vulnerabilities in System-on-Chip (SoC) designs[\[27\]](https://arxiv.org/html/2505.22878v1#:~:text=Language%20Model%20,enhancing%20the%20security%20verification%20process). They recognized that out-of-the-box LLMs may not know hardware security details, so they curated a dataset of common hardware vulnerabilities (like privilege escalation, insecure state machines, side-channel leakage, etc.) and fine-tuned an open-source model on this data[\[28\]](https://arxiv.org/html/2505.22878v1#:~:text=detect%20SoC,and%20mitigate%20critical%20security%20threats). BugWhisperer’s custom model was able to scan RTL designs and accurately identify instances of **13 known vulnerability types** injected into a RISC-V core (the CVA6/Ariane core)[\[29\]](https://arxiv.org/html/2505.22878v1#:~:text=The%20proposed%20framework%20%E2%80%9CBugWhisperer%E2%80%9D%20comprises,as%20shown%20in%20Figure%201). This demonstrates that with the right training, an LLM can act like a static analysis tool, flagging dangerous coding patterns or design configurations that could be exploited[\[30\]](https://arxiv.org/html/2505.22878v1#:~:text=Hardware%20vulnerabilities%20at%20the%20SoC,damage%20within%20the%20semiconductor%20industry)[\[31\]](https://arxiv.org/html/2505.22878v1#:~:text=Recently%2C%20LLMs%20have%20gained%20traction,trained). In our pipeline, **LLM4Security** could use a similar fine-tuned model (or a prompt-engineered approach with a knowledge base of vulnerabilities) to **inspect the HDL for security issues**. For instance, it might check that access control signals are properly enforced, that debug interfaces are disabled in production mode, or that cryptographic modules clear sensitive data after use. The LLM can then output a report of potential weaknesses and even recommend design changes to mitigate them[\[27\]](https://arxiv.org/html/2505.22878v1#:~:text=Language%20Model%20,enhancing%20the%20security%20verification%20process)[\[32\]](https://arxiv.org/html/2505.22878v1#:~:text=tuned%20LLM%20specifically%20designed%20for,the%20research%20community%20in%20enhancing).
 
-### Assertions (optional NL2SVA)
+Beyond static analysis, LLMs can assist in **dynamic security verification**. A sophisticated concept recently proposed is *SV-LLM*, a multi-agent LLM system covering the entire security verification workflow[\[33\]](https://www.emergentmind.com/topics/sv-llm#:~:text=%2A%20SV,enhancing%20overall%20hardware%20security%20verification). In SV-LLM, separate LLM agents handle tasks such as: identifying security-critical assets in the design (e.g., secret key registers), performing threat modeling (figuring out what an attacker might try to do), generating security-oriented test plans, detecting vulnerabilities in RTL, and even writing SystemVerilog assertions for security properties[\[34\]](https://www.emergentmind.com/topics/sv-llm#:~:text=,is%20organized%20into%20six%20layers)[\[35\]](https://www.emergentmind.com/topics/sv-llm#:~:text=4,checking%20expected%20regions%20of%20interest). One agent uses a fine-tuned model (e.g., a tuned 7B model) to do **RTL vulnerability detection** with high accuracy[\[36\]](https://www.emergentmind.com/topics/sv-llm#:~:text=context,correct%20SystemVerilog%20testbenches%2C%20running%20simulation), while another agent can automatically write testbenches to try to *trigger* the suspected vulnerability and validate it in simulation[\[37\]](https://www.emergentmind.com/topics/sv-llm#:~:text=Mistral,threat%20models%2C%20and%20relevant%20Common). This multi-agent setup is orchestrated so that the agents share information and iteratively refine their findings[\[38\]](https://www.emergentmind.com/topics/sv-llm#:~:text=SV,practical%20case%20studies%20and%20quantitative)[\[39\]](https://www.emergentmind.com/topics/sv-llm#:~:text=Each%20agent%20may%20invoke%20%22sub,aware%20workflows). While SV-LLM is an emerging approach, it aligns well with our pipeline vision: LLM4Security doesn’t have to be a single monolithic model; it can be a coordinated set of LLM-driven tools each tackling an aspect of security verification.
 
-Key English properties → SVA in `sva/properties.sv`, e.g.:
+For practical use, our pipeline’s security stage would involve running the LLM4Security checks after the design passes functional tests. It might produce outputs like, *“Warning: Signal X is not properly gated and could leak information during mode switch”* or *“Critical: Found a potential buffer overflow in the packet parser state machine”*. Such findings would be reviewed by human experts (since domain experts will validate these results) and then fed back for design changes either manually or via the LLM. By catching security flaws at RTL, we **prevent costly fixes later in silicon** and ensure the chip is robust against adversarial scenarios[\[30\]](https://arxiv.org/html/2505.22878v1#:~:text=Hardware%20vulnerabilities%20at%20the%20SoC,damage%20within%20the%20semiconductor%20industry)[\[40\]](https://arxiv.org/html/2505.22878v1#:~:text=Traditional%20SoC%20security%20verification%20approaches,increasing%20demand%20for%20automated%20and). This is especially important if the chip handles sensitive data or will be used in safety-critical applications.
 
-* “When `CTRL.start` is pulsed, **`STAT.done` must assert within N cycles**.”
-* “If `CFG.width=16`, inputs **must be masked to 16 bits** before multiply.”
-* “No writes to `RES` are permitted.”
+## LLM4HLS: High-Level Synthesis via LLMs
 
-### Coverage
+While one can directly generate RTL from English, sometimes the starting point is an algorithm written in C/C++ or Python that needs to be turned into hardware. High-Level Synthesis (HLS) tools automate the conversion of C code into RTL, but they often require the code to be written in a hardware-friendly style (certain patterns, pragmas, and no unsupported constructs). LLMs can bridge the gap by **refactoring or generating HLS-compatible code** from a high-level description.
 
-* Functional coverage bins for widths, pipeline settings, overflow cases.
-* Line/branch/toggle coverage (if enabled in Verilator build).
+A notable work in this area is **C2HLSC** by Collini et al., which asked: *Can an LLM bridge the software-to-hardware design gap?*[\[41\]](https://arxiv.org/abs/2412.00214#:~:text=%3E%20Abstract%3AHigh,we%20implement%20a%20preprocessing%20step). The study used an LLM to automatically rewrite ordinary C code into a form that a commercial HLS tool would accept and synthesize. For example, when given algorithms like QuickSort or AES encryption, the LLM introduced stream interfaces and hardware-specific pragmas, split the code into smaller functions (to fit hardware hierarchy), and replaced unsupported constructs with synthesizable ones[\[42\]](https://arxiv.org/abs/2412.00214#:~:text=%3E%20Abstract%3AHigh,compatible). This was done iteratively: the LLM would propose an HLS version, the HLS compiler’s feedback (errors or performance warnings) would be captured, and then the LLM would refine the code to fix those issues[\[43\]](https://arxiv.org/abs/2412.00214#:~:text=investigates%20Large%20Language%20Models%20,the%20problem%20in%20a%20divide). In essence, the LLM acted as an **assistant to make C code “HLS-ready,”** guided by the compiler’s responses – similar in spirit to AutoChip’s HDL iteration but at the C source level. They also implemented a preprocessing step to break down complex programs into smaller sub-functions, so the LLM could handle each piece more easily (divide-and-conquer approach)[\[44\]](https://arxiv.org/abs/2412.00214#:~:text=code%20for%20NIST%20800,Our). The results were encouraging: the framework successfully converted several *non-trivial software programs* (cryptographic algorithms, NIST randomness test suites, etc.) into synthesizable C, which then translated to working hardware designs[\[45\]](https://arxiv.org/abs/2412.00214#:~:text=we%20implement%20a%20fully%20automated,achieved%20generating%20Verilog%20with%20LLMs). This was **accomplished on benchmarks far more complex than those used in direct Verilog generation experiments**, highlighting that LLMs can manage large-scale design translation when properly structured[\[46\]](https://arxiv.org/abs/2412.00214#:~:text=that%20breaks%20down%20the%20hierarchy,achieved%20generating%20Verilog%20with%20LLMs).
 
----
+In our pipeline, **LLM4HLS** would function as follows: if the input to the design is an algorithm (say a matrix multiplication specified in C or pseudocode), the LLM can either produce the Verilog directly or first produce an optimized HLS C code. The latter approach might be beneficial because decades of HLS research and tools can then handle the scheduling, pipelining, and low-level RTL generation. The LLM could focus on ensuring the high-level code is efficient (adding pragmas like \#pragma unroll or organizing loops for pipelining) and correct. For instance, given a C description of a matrix-multiply, the LLM might output an HLS module that streams in matrix data and accumulates results in a hardware-friendly manner (using fixed-size arrays, avoiding dynamic memory, etc.), possibly even inserting comments or assertions to help verification. This *automated HLS refinement* could save hardware designers significant time adapting software algorithms for FPGA/ASIC implementation.
 
-## STA/SDF and Constraints
+Another scenario is using LLM4HLS for **code optimization**. Researchers have looked into LLMs suggesting algorithmic modifications to meet hardware constraints (e.g., using an approximate algorithm if it significantly reduces circuit area, or loop splitting to meet timing). For example, a concept called *HLS-Repair* applied LLMs with retrieval-augmented generation to optimize HLS code for better performance, by consulting documentation and past code patterns[\[47\]](https://arxiv.org/html/2508.20030v1#:~:text=C2HLSC%C2%A0,C%2C%20reducing%20human). In short, LLM4HLS can both generate initial HLS code and improve existing code, acting as an AI coding assistant specialized for hardware design. The output from LLM4HLS would then be fed into downstream tools (or into our LLM4Verilog module if we treat the HLS tool as providing Verilog).
 
-* **Clock:** `create_clock -name core_clk -period 20.000 [get_ports clk]`  *(50 MHz target; tune per OpenFrame budget)*
-* **I/O:** modest `set_input_delay / set_output_delay` relative to `core_clk`.
-* **False paths:** between async reset and data.
-* **SDF:** generated by OpenLane sign-off, used in back-annotated sim to validate any hold/setup issues at chosen frequency.
+To ensure factual correctness when dealing with HLS, the pipeline would incorporate verification at the C level (e.g., comparing the HLS C output of the LLM against the original spec by running software simulations), and then use LLM4Validation on the resulting RTL. This two-step check – functional verification in software followed by in-hardware verification – can catch discrepancies introduced by the HLS process early.
 
-All constraints in `synth/constraints.sdc`. Sign-off reports under `openlane/runs/*/reports/signoff/`.
+## LLM4Analog: Generating Analog Circuits from Schematics or Descriptions
 
----
+While digital design has seen the bulk of LLM applications so far, analog and mixed-signal design is an emerging frontier. Designing analog circuits (like amplifiers, filters, data converters) often involves interpreting schematics and deriving SPICE netlists (lists of transistors, resistors, etc. with connections and parameter values) – a task that is largely manual today. LLMs, especially with multi-modal capabilities (vision \+ text), are being explored to automate **schematic-to-netlist translation**, and even analog circuit synthesis from high-level intents.
 
-## OpenFrame / ChipIgnite Readiness
+A recent effort called **Auto-SPICE** made headlines as the first fully automated framework using LLMs to generate SPICE netlists from circuit diagrams[\[48\]](https://arxiv.org/html/2411.14299v1#:~:text=Auto,step%20workflow%20to%20overcome). The challenge here is that a circuit schematic (an image) must be parsed: recognize symbols (resistors, capacitors, transistors, etc.), identify which wires connect where, then produce a corresponding textual netlist. Auto-SPICE tackles this with a combination of computer vision and LLM prompt engineering[\[49\]](https://arxiv.org/html/2411.14299v1#:~:text=design%20and%20verification,driven%20development)[\[50\]](https://arxiv.org/html/2411.14299v1#:~:text=Contributions%3A%20Auto,We%20make%20four%20contributions). It uses **object detection** models to label components in the schematic image and detect connection lines (nets)[\[51\]](https://arxiv.org/html/2411.14299v1#:~:text=GPT,Our%20framework%20demonstrates%20significant%20performance). This partial understanding is fed into GPT-4 (with vision input capability) which attempts to draft a SPICE netlist. The team then applied extensive **prompt tuning** to fix common errors, and introduced a verification step where the generated netlist is simulated or compared against known results to ensure accuracy[\[49\]](https://arxiv.org/html/2411.14299v1#:~:text=design%20and%20verification,driven%20development)[\[52\]](https://arxiv.org/html/2411.14299v1#:~:text=To%20address%20this%20issue%2C%20a,are%20described%20in%20Section%C2%A0%202). With this loop, Auto-SPICE managed to extract netlists from about 2,100 schematics with good accuracy, greatly surpassing earlier semi-automatic approaches[\[48\]](https://arxiv.org/html/2411.14299v1#:~:text=Auto,step%20workflow%20to%20overcome)[\[52\]](https://arxiv.org/html/2411.14299v1#:~:text=To%20address%20this%20issue%2C%20a,are%20described%20in%20Section%C2%A0%202). The output is a properly formatted SPICE netlist that can be directly used in circuit simulators for analog verification.
 
-* We adhere to **OpenFrame User Project** wrapper (`top_openframe_user.v`) with required I/O.
-* **DRC/LVS** via OpenLane standard flow; **antenna** checks documented.
-* **Precheck:** `precheck/precheck.cfg` + `scripts/ci_precheck.sh` runs:
+Why is this important? Firstly, it helps create datasets – Auto-SPICE was used to build a dataset of thousands of netlists which can further **train better LLMs for analog design**[\[53\]](https://arxiv.org/html/2411.14299v1#:~:text=1). Secondly, it’s a stepping stone to *text-based analog design*: the authors even fine-tuned GPT models on the generated dataset to test if the model could, in the future, take an **English prompt (like “two-stage operational amplifier with gain of 100”) and output a SPICE netlist**[\[54\]](https://arxiv.org/html/2411.14299v1#:~:text=Use%20Auto,16). Early results show promise in this direction.
 
-  * RTL lint, clock/reset sanity, missing tie-offs, wrapper pin audit, GDS consistency.
-* **Deliverables for chipIgnite:** netlist, GDS, SDF, LEF, Liberty references, and reports packaged per ChipFoundry guidance.
+In the context of our pipeline, **LLM4Analog** could serve two roles. If our chip includes analog components (say, a sensor front-end or a PLL), and we have schematics or standard analog intellectual property blocks, an LLM could help integrate them by generating netlists or checking their correctness. For example, given a schematic of a bandgap voltage reference, LLM4Analog might produce the SPICE netlist which then can be fed into analog simulators for verification. This saves time in manually coding the netlist and avoids human transcription errors. The second role is more forward-looking: generating new analog designs from specifications. While fully AI-synthesized analog circuits are still experimental, it’s conceivable to ask an LLM, *“Design a low-pass filter with cutoff 1 kHz using a 0.18µm CMOS process”*, and have it propose a netlist (which could be refined via simulation feedback just like digital circuits are). Early work like **AnalogCoder** has attempted a training-free LLM agent to design simple analog circuits by writing Python scripts that assemble component values, with some success in achieving target specs[\[55\]](https://ojs.aaai.org/index.php/AAAI/article/view/32016/34171#:~:text=,Firstly%2C). As the technology matures, our pipeline can incorporate analog generation for mixed-signal SoCs, making it a one-stop solution for both digital and analog blocks.
 
----
+For now, the primary use of LLM4Analog in our flow would be to **automate analog documentation and checking**. Many analog circuits come from datasheets or app notes; an LLM could read a textbook schematic and give us a starting netlist (leveraging something like Auto-SPICE’s method) which the human engineer can then fine-tune. This augments an analog designer’s capability, allowing them to explore more topologies faster. It also ensures that if our chip design includes any analog macros, we don’t neglect them in verification – the LLM can help generate testbenches for analog (like checking an ADC’s linearity or an amplifier’s bandwidth by setting up appropriate simulations) similar to how it does for digital.
 
-## Software Demo (POWER / Microwatt)
+## Integration into a Unified Chip Design Framework
 
-Build and run a simple MMIO demo under Microwatt (FPGA or sim):
+With specialized LLM modules handling generation, validation, security, HLS, and analog tasks, the ultimate goal is to integrate them into a **cohesive framework** that can take a high-level chip specification and deliver a verified, implementable design. This vision draws inspiration from recent multi-agent pipelines used in research competitions, as well as open-source flows for chip design.
 
-```bash
-cd sw/examples
-powerpc64le-linux-gnu-gcc -O2 -nostdlib -T ../linker.ld accel_demo.c -o accel_demo.elf
-# load via your preferred Microwatt boot flow (or run under sim if available)
-```
+The **overall process** might look like this (assuming a digital-centric design for illustration):
 
-`accel_demo.c`:
+1. **Specification Ingestion:** The user provides an English description of the desired functionality (e.g., *“a matrix multiplication accelerator that multiplies two 4x4 matrices”*) or a reference implementation (like a C code or algorithmic description for the accelerator). Additionally, the user can specify constraints (area, speed targets) or provide interface details (e.g., it connects to a CPU bus).
 
-* Writes operands A/B, pulses `CTRL.start`, polls `STAT.done`, reads `RES`.
-* Optional ISR if IRQ is enabled.
+2. **Initial Design Generation (LLM4Verilog / LLM4HLS):** The pipeline uses the spec to generate an initial HDL design. If the input was algorithmic, LLM4HLS may first produce HLS C code and then either automatically run it through an HLS tool or directly generate equivalent RTL. If the spec was more direct, LLM4Verilog produces the Verilog/VHDL for each module. This could be done module-by-module if the design is complex – the spec can be broken down hierarchically (as done in Chip-Chat with GPT-4)[\[18\]](https://arxiv.org/html/2508.20030v1#:~:text=In%20front,and%20select%20the%20best%20design). The outcome is a set of HDL files representing the chip's RTL.
 
----
+3. **Iterative Refinement Loop:** The generated RTL is not assumed to be perfect. Here an automated **verify-and-refine loop** kicks in, much like AutoChip’s method[\[8\]](https://arxiv.org/html/2311.04887v2#:~:text=In%20this%20paper%2C%20we%20design,prompts%20and%20responses%20to%20the). The steps:  
+   a. **Compile and Simulate:** Using a simulator (e.g., Verilator or an HDL simulator), run syntax checks and basic simulations. For simulation, we initially rely on simple built-in tests or sanity checks (e.g., does a FIFO module read and write correctly?).  
+   b. **Analyze Feedback:** If the compiler throws errors or the simulation fails an assertion, collect that message. This text (error log or failing test scenario) is fed to the LLM with a prompt like *“The design failed this test or has this error; please fix the code accordingly.”*  
+   c. **Regenerate Code:** The LLM proposes fixes to the HDL. We replace or patch the code and iterate again.
 
-## Reproducibility & AI Usage Disclosure
+This loop continues until the design at least **compiles cleanly and passes basic self-tests**, or until we hit a certain number of iterations (at which point a human might step in to guide, if needed). The loop is essentially an automated RTL debug cycle. By the end of it, we have a design that at least meets the initial specification on a basic level.
 
-Per hackathon rules, **all AI involvement is disclosed and reproducible**:
+1. **Comprehensive Verification (LLM4Validation):** Now, we task the LLM to generate more extensive verification collateral. For example:
 
-* **Prompts & Sessions:**
+2. **Testbenches**: The LLM can generate a parameterized testbench for the whole chip or specific subsystems. If our example is the matrix multiplier, it might create a testbench that applies multiple random matrices, known corner-case matrices (identity, zero, etc.), and checks the results against software-computed outcomes. It would include self-checking code to flag mismatches[\[19\]](https://arxiv.org/abs/2407.03891#:~:text=this%20challenge%2C%20we%20introduce%20AutoBench%2C,For%2075%20sequential). For CPU or larger designs, it could generate sequences of instructions or transactions to exercise all features.
 
-  * `ai_logs/YYYY-MM-DD_*.md` includes: prompt text, model, temperature, system instructions, and **entire conversation** (sanitized).
-* **Prompt Templates:** `scripts/gen_prompt_template.md` (design, TB, assertions).
-* **Human-in-the-loop:** Every LLM artifact is **reviewed, linted, simulated**, and may be **patched**. Patch diffs reference the originating prompt.
+3. **Assertions**: The LLM can output formal assertions that encode critical properties (e.g., *“the output FIFO overflow flag must eventually deassert after the FIFO is read”*). These can be used with formal tools or runtime.
 
----
+4. **Coverage suggestions**: The LLM might even suggest coverage points or scenarios that haven’t been tested yet, based on analysis of the design (this is analogous to a verification engineer thinking of corner cases).
 
-## Results & PPA (example placeholders)
+We then run the generated testbenches in simulation. Thanks to the self-checking nature, we’ll know if any tests failed. If failures occur, we use the LLM to analyze them (as mentioned, having it explain a discrepancy). Suppose a test uncovered that *“when input matrix has all 1s, the result is off by 1 in certain positions.”* The LLM can trace this to, say, an off-by-one error in an accumulation loop, and it can suggest a fix in the Verilog. We apply the fix and rerun tests. This may loop until all LLM-generated tests pass, achieving a high confidence in correctness.
 
-| Config          | Cells | Area (µm²) | WNS (ns) | Fmax (MHz) | Power (mW) |
-| --------------- | ----: | ---------: | -------: | ---------: | ---------: |
-| WIDTH=16, STG=0 |  3,1k |     92,500 |      1.8 |       50.0 |        3.2 |
-| WIDTH=16, STG=1 |  3,8k |    108,400 |      3.6 |       83.3 |        3.8 |
-| WIDTH=16, STG=2 |  4,4k |    122,900 |      5.1 |      111.0 |        4.4 |
+Additionally, we can incorporate **benchmark testing** here: for a CPU or standard accelerator, we can run known benchmark programs (SPEC, CoreMark, LINPACK kernels, etc.). The LLM might help by setting up those tests (writing a test harness to load the program into memory, for instance). The results (performance, correctness) can be compared against known values from existing chips. For example, if using the open-source Microwatt core as a baseline, we could run identical software on Microwatt and on our LLM-generated CPU to ensure our design produces the same outputs. Any deviations would be investigated.
 
+1. **Security Review (LLM4Security):** Once functional verification is largely green, the design undergoes a security pass. The LLM scans the HDL for known vulnerable patterns (using a knowledge base or fine-tuned model as described earlier). It might produce a report: *“No obvious vulnerabilities found”* or list issues with reasoning. For each issue, we can decide if it’s a true problem. For example, the LLM might warn about a debug interface that could be misused; we might choose to add a register to disable that in production mode and mark the issue resolved. The LLM can also generate **security-focused tests or assertions** – e.g., ensure that secure mode registers cannot be written from user mode (and create an assertion that flags if it ever happens in simulation)[\[37\]](https://www.emergentmind.com/topics/sv-llm#:~:text=Mistral,threat%20models%2C%20and%20relevant%20Common)[\[56\]](https://www.emergentmind.com/topics/sv-llm#:~:text=6,for%20syntactic%20and%20context%20correctness). We then rerun simulation specifically targeting those security aspects. This step gives the design a clean bill of health from a security standpoint, which is particularly important if the chip will be used in sensitive environments.
 
----
+2. **Physical Design and Benchmarking:** With a verified RTL design, the next step in a real chip project is logic synthesis, place-and-route, and then analyzing the physical implementation (timing, area, power). While these steps involve external EDA tools, an LLM can assist in driving them as well. In the recent DAC/ICLAD Generative AI Hackathon, the winning team demonstrated an AI-driven flow that went **from English spec to a fully routed layout (GDS file)** using LLM agents[\[57\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=%E2%80%9COur%20solution%20automated%20the%20entire,consuming%20process.%E2%80%9D). They used one LLM to generate the RTL, another to verify it, and a third to interface with physical design tools and close timing[\[58\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=Their%20approach%20involved%20a%20multi,validating%20and%20refining%20chip%20designs). In our pipeline, we can incorporate a similar concept: an LLM agent that writes the synthesis scripts, analyzes timing reports, and if needed, suggests fixes like adding pipeline stages or resizing certain modules if timing fails. For instance, if the design fails to meet 500 MHz, the LLM might identify the multiplier as the critical path and propose using a pipelined multiplier IP instead. A human would, of course, sign off such changes, but the LLM can significantly shorten the iteration by reading lengthy timing reports and pinpointing issues (a task even veterans find cumbersome).
 
-## Roadmap & Submission Plan
+Once a layout is produced, we can **run benchmarks on the final design**. On FPGA or in gate-level simulation, run the same matrix multiply on large data to measure throughput, compare against the baseline (maybe our target was to beat an existing core’s performance). If using Microwatt as a comparison, we could instantiate our module alongside Microwatt in a test harness and measure cycle counts or energy for a given task. The pipeline’s output would include these benchmark results, giving an idea of where the AI-generated design stands relative to hand-crafted designs. Encouragingly, the TAMU team’s fully-automated flow showed that AI can handle this front-to-back process, though it’s still early days[\[59\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=As%20the%20complexity%20of%20modern,language%20specifications%20to%20physical%20layout)[\[60\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=The%20team%20also%20tackled%20the,suggest%20corrections%20without%20human%20intervention). Their multi-agent system effectively **split the design problem into generation, verification, and implementation**, mirroring our partitioning of LLM4Verilog, LLM4Validation, etc., and proved the concept by winning the competition.
 
-* **Sept 19–22:** Proposal+repo, LLM baseline RTL/TB, smoke sims (✅ you are here)
-* **Sept 23–Oct 10:** Full TB, coverage, Verilator back-annotation harness
-* **Oct 11–20:** Yosys/OpenLane iterations, timing closure at target MHz
-* **Oct 21–31:** Precheck pass, video & screenshots, final README polish
-* **Nov 1–3:** Freeze, final submission (GDS/SDF/Netlist + docs)
+1. **Human Oversight and Final Touches:** Throughout this integrated process, it’s vital to have human experts in the loop at critical junctures. While the goal is to automate as much as possible, **experienced engineers (with 20-50 years of wisdom)** will review the AI’s output – especially for corner cases, safety, and any creative design decisions. The LLM pipeline should be seen as augmenting human designers, not completely replacing them. Humans will validate that the spec truly matches what’s implemented (especially if the spec had ambiguities an LLM might have misinterpreted), and perform sanity checks on the final netlist (e.g., no unexpected finite state machine states, no redundant logic that wastes area, etc.). We emphasize factual correctness and traceability: every time the LLM makes a change or suggestion, the reasons are documented (often the LLM can output a rationale along with code). This makes it easier for reviewers to follow the trail of decisions and verify that nothing nonsensical has crept in.
 
----
+## All Lights on Microwatt (OpenPOWER Core Integration)
 
-## 14) How to Contribute / Reproduce
+Microwatt is a **tiny 64-bit POWER ISA soft-core** (written in VHDL) originally developed by IBM, notable as the first completely open POWER processor core[\[61\]](https://www.hackster.io/news/openpower-foundation-trumpets-fully-open-64-bit-microwatt-power-core-f54c5d5ad295#:~:text=OpenPOWER%20Foundation%20executive%20director%20Hugh,the%20POWER%20instruction%20set%20architecture). It was intended as a simple, readable core for experimentation and has since gained a community of contributors extending it with new features[\[62\]](https://www.hackster.io/news/openpower-foundation-trumpets-fully-open-64-bit-microwatt-power-core-f54c5d5ad295#:~:text=The%20first%20open%20implementation%20of,the%20end%20of%20the%20month). Being **lightweight and highly hackable** (“just a make away” as one developer put it), Microwatt provides an excellent playground to apply AI design techniques[\[63\]](https://www.hackster.io/news/openpower-foundation-trumpets-fully-open-64-bit-microwatt-power-core-f54c5d5ad295#:~:text=,It%E2%80%99s%20just%20a%20make%20away).
 
-```bash
-# Quickstart: full pipeline (inside container)
-./scripts/ci_precheck.sh
-# Then inspect:
-#  - sim/waves/*.vcd
-#  - synth/reports/*
-#  - openlane/runs/<ts>/reports/signoff/*
-#  - ai_logs/*  (LLM provenance)
-```
+Here’s how our pipeline could engage with Microwatt:
 
-PRs welcome for:
+* **Design Extensions**: We could task LLM4Verilog (or actually LLM4VHDL in this case) to **generate new modules or peripherals for Microwatt**. For example, say we want to add a matrix multiplication accelerator or a novel sensor interface to Microwatt’s SoC. The LLM can take the interface specifications (how it connects to Microwatt’s bus and registers) and generate the RTL for the accelerator. This leverages the LLM’s knowledge to implement standard bus protocols or even custom instructions. Since Microwatt was designed to be easily understandable, the LLM can also read Microwatt’s existing code (provided as context) to align style and conventions. Essentially, the AI can become a junior engineer on the Microwatt project, writing new features under guidance.
 
-* Additional datapaths (e.g., FIR, SHA-256 variant)
-* Stronger SVA libraries
-* Microwatt integration examples and firmware
+* **Verification Aids**: Microwatt already has a suite of tests, but LLM4Validation could augment this by writing additional **SystemVerilog assertions** monitoring Microwatt’s pipeline for correctness. For instance, ensuring that for every instruction that writes to a register, the register file is updated appropriately and no other register is inadvertently altered – an assertion can be auto-generated for that. The LLM can also attempt to generate random instruction sequences to stress-test the CPU (similar to how verification engineers write random testers for CPUs). Given that POWER ISA might be less familiar to some, an LLM fine-tuned on ISA documentation can help produce valid random programs and check results via an ISA simulator.
 
----
+* **Security Checks**: Using LLM4Security, we can analyze the Microwatt core for any known issues. As an illustration, some common hardware security issues in CPUs include things like forgetting to clear a register after use (data remanence) or not gating debug mode entry. The LLM could flag if, say, *“Microwatt’s debug interface allows unlimited access in all modes”* (just a hypothetical example). We would then know to implement a fix or at least document the risk. If Microwatt is being integrated into a larger SoC, LLM4Security can also look at the system-level vulnerabilities (e.g., making sure the memory protection unit works as intended).
 
-## Acknowledgments
+* **Physical Implementation & Tuning**: The Microwatt hackathon (Microwatt Momentum) expects participants to actually implement the design on an FPGA or through an ASIC flow (OpenLane for Sky130)[\[64\]](https://chipfoundry.io/challenges/microwatt#:~:text=,simulations%20must%20also%20be%20provided)[\[65\]](https://chipfoundry.io/challenges/microwatt#:~:text=Apache2%2C%20MIT%2C%20etc). Our pipeline can assist by generating the necessary constraints (LLMs can write FPGA constraint files or floorplanning directives by analyzing the design). Also, since one of the requirements is documenting all AI usage and providing reproducible flows[\[66\]](https://chipfoundry.io/challenges/microwatt#:~:text=of%20this%20process,simulations%20must%20also%20be%20provided), our approach naturally aligns: every prompt and LLM interaction can be logged and included in the project deliverables, demonstrating exactly how AI contributed. This transparency is important for the judges (and those 50-year veterans) to **trust the process**.
 
-* **Microwatt** core and OpenPOWER community.
-* **ChipFoundry** OpenFrame and **chipIgnite/SKY130** resources.
-* **Prof. Ramesh Karri** and **Prof. Siddharth Garg** (NYU) for guidance and the *LLM4ChipDesign* curriculum (AutoChip, ChipChat, LLM4Validation, VeriThoughts, NL2SVA, LLM4HLS).
-* Open-source EDA: **Verilator, Yosys, OpenSTA, OpenLane**, **GTKWave**.
----
+Microwatt being **VHDL-based** adds a slight twist, since much of the LLM research has focused on Verilog. However, an LLM that knows generic HDL concepts can likely output VHDL with the right prompting. Alternatively, the pipeline could generate in Verilog and then use a transpiler or manual translation to integrate with Microwatt’s VHDL – but given LLM flexibility, asking it directly in VHDL is reasonable. In any case, focusing on Microwatt lets us show that our pipeline isn’t just for toy examples; it can improve and build upon a **real, open-source CPU core** that others can run on FPGA or include in tapeouts. The hackathon’s theme *“Microwatt for the open computing era”*[\[67\]](https://chipfoundry.io/challenges/microwatt#:~:text=Theme%20%26%20Challenge%3A%20,the%20open%20computing%20era) emphasizes creative and useful applications of the core. Using our LLM pipeline to co-design with Microwatt, we can, for instance, rapidly prototype an **AI-generated coprocessor** that accelerates a particular workload (like algebra or cryptography) and integrates it with Microwatt’s open ISA. The entire process – from coding to testing to physical design – would be accelerated by the AI assistants, showcasing how experts and AI together push the envelope of open-source hardware.
 
-### Appendix A — Example LLM Prompts
+## Conclusion
 
-**A1. RTL (MAC) prompt (AutoChip/ChipChat):**
+Bringing it all together, we envision an **LLM-augmented chip design flow** that spans from specification to verified RTL to physical layout, incorporating modules for design generation, validation, security analysis, high-level synthesis, and even analog support. This approach builds on the foundation laid by tools like AutoChip (for automated HDL generation with feedback)[\[6\]](https://arxiv.org/html/2311.04887v2#:~:text=models%20,of%20those%20LLMs%2C%20and%20differing) and lessons from Chip-Chat’s conversational design of a full CPU[\[12\]](https://arxiv.org/abs/2305.13243#:~:text=faced%20and%20opportunities%20presented%20when,written%20HDL%20for%20tapeout), but extends them into a **holistic platform** covering the “spec-to-tapeout” journey. Recent successes by academic teams have proven the viability of such ideas – for example, a multi-agent LLM system was able to go from *English specs to routable layouts* and bug-free designs in the DAC 2025 hackathon[\[57\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=%E2%80%9COur%20solution%20automated%20the%20entire,consuming%20process.%E2%80%9D)[\[58\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=Their%20approach%20involved%20a%20multi,validating%20and%20refining%20chip%20designs). Our pipeline draws on those proven techniques and integrates state-of-the-art research in each subdomain (HDL generation, testbench automation, security checks, HLS transformation, analog netlist generation) to create a powerful unified workflow.
 
-> You are a Verilog expert. Generate synthesizable Verilog for a parameterized MAC unit with WIDTH and STAGES generics. Inputs A,B (WIDTH), ACCUM (2*WIDTH). Control via `start` and `clr`. Output `res` (2*WIDTH), `busy/done/ovf`. Insert optional pipeline stages. No delays or unsynthesizable constructs. Provide clearly named ports and one always\_ff per stage. Add comments for integration and reset behavior.
+For experienced engineers reviewing this approach, a few important points stand out:
 
-**A2. Testbench prompt (LLM4Validation):**
+* **Productivity Gain, Not Magic:** The LLM pipeline is aimed at reducing rote work (writing boilerplate testbenches, finding syntax errors, etc.) and providing smart suggestions. Engineers remain in control to make architectural decisions and final optimizations. The AI acts as an assistant that can quickly draft code or point out issues, which the engineer then refines – akin to having a very knowledgeable but tireless junior engineer on the team. By documenting every AI-derived output and verifying it through simulations and tests, we maintain engineering rigor and factual correctness (no design change goes unvalidated).
 
-> Create a SystemVerilog testbench for `autoaccel_mac` with constrained-random A,B, directed corner cases (0x0000, 0xFFFF, alternating bits), and overflow scenarios. Add a scoreboard with a reference model (integer math). Generate a simple MMIO driver to poke CTRL/STAT/A/B/ACCUM. Dump VCD. End test with PASS/FAIL and non-zero exit on failure.
+* **Factual Basis and Data:** Each capability of the pipeline is backed by current research or tools, which we have cited throughout. We avoid any hype that isn’t substantiated. If an LLM suggests something unusual, it’s cross-checked either by another tool or by the engineer. This addresses concerns of hallucination – for instance, an LLM might “invent” a signal name that doesn’t exist; our compile/simulate feedback loop will catch that immediately, so the error is fixed just like a human typo would be.
 
-**A3. Assertions (NL2SVA) prompt:**
+* **Extensible Framework:** The modular nature (LLM4Verilog, LLM4Validation, etc.) means this pipeline can adapt as LLM technology improves. If a new model comes out that’s exceptional at analog design, we can plug it into LLM4Analog. If a particular task is better served by a traditional EDA algorithm than an LLM, we can integrate that as well. The future EDA toolchain may very well be a collaboration of **LLMs \+ classical tools \+ human insight**, each doing what it’s best at. Our approach embodies that philosophy, aiming to yield a design faster and with fewer errors by leveraging each “agent” for its strength.
 
-> Translate: “When start is pulsed, done must assert within N cycles; ACCUM updates only on done; RES must be stable otherwise; if WIDTH=16 all inputs are masked to 16 bits; busy must deassert before next start.”
+In conclusion, the integration of LLMs into chip design holds the promise of **accelerating development cycles and lowering the barrier to entry** for hardware design, by capturing expert knowledge in the model and making it accessible through natural language[\[68\]](https://www.dac.com/Conference/ICLAD-GenAI-Chip-HackathonDAC#:~:text=The%20growing%20complexity%20of%20hardware,as%20well%20as%20design%20time)[\[3\]](https://arxiv.org/html/2508.20030v1#:~:text=Recent%20studies%20show%20that%20applying,and%20manufacturing%20of%20electronic%20systems). By combining *AutoChip’s automated coding*, *Chip-Chat’s interactive problem-solving*, and dedicated LLM agents for verification, security, HLS, and analog tasks, we can create a cohesive environment where a chip can be specified in a high-level manner and realized with significantly less manual effort – all while maintaining the stringent correctness and efficiency standards that seasoned engineers expect. This approach has already shown tangible results in competitive settings (e.g., hackathons and research tapeouts), and focusing it on a platform like Microwatt further demonstrates how it can enhance real open-source hardware projects. Moving forward, such AI-driven design pipelines could become a staple in the semiconductor industry, complementing human expertise with machine speed to meet the growing complexity of chips in the coming decades.
 
-(Record outputs in `ai_logs/`.)
+**Sources:**
+
+* Shailja Thakur *et al.* “AutoChip: Automating HDL Generation Using LLM Feedback.” *Design Automation Conference (DAC)*, 2024[\[6\]](https://arxiv.org/html/2311.04887v2#:~:text=models%20,of%20those%20LLMs%2C%20and%20differing)[\[7\]](https://arxiv.org/html/2311.04887v2#:~:text=Image%3A%20Refer%20to%20caption%20Figure,improve%20accuracy%20at%20low%20cost).
+
+* Jason Blocklove *et al.* “Chip-Chat: Challenges and Opportunities in Conversational Hardware Design.” *ACM/IEEE Workshop on Machine Learning for CAD (MLCAD)*, 2023[\[12\]](https://arxiv.org/abs/2305.13243#:~:text=faced%20and%20opportunities%20presented%20when,written%20HDL%20for%20tapeout)[\[13\]](https://arxiv.org/abs/2305.13243#:~:text=used%20interactively%2C%20we%20perform%20a,written%20HDL%20for%20tapeout).
+
+* Texas A\&M Engineering News. “Chip, Chip, Hooray\! Team Wins AI Chip Design Challenge.” August 2025[\[57\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=%E2%80%9COur%20solution%20automated%20the%20entire,consuming%20process.%E2%80%9D)[\[58\]](https://engineering.tamu.edu/news/2025/08/chip-chip-hooray-texas-am-team-wins-ai-chip-design-challenge.html#:~:text=Their%20approach%20involved%20a%20multi,validating%20and%20refining%20chip%20designs).
+
+* Ruidi Qiu *et al.* “AutoBench: Automatic Testbench Generation and Evaluation Using LLMs for HDL Design.” *arXiv preprint*, 2024[\[19\]](https://arxiv.org/abs/2407.03891#:~:text=this%20challenge%2C%20we%20introduce%20AutoBench%2C,For%2075%20sequential).
+
+* Karthik Maddala *et al.* “LAAG-RV: LLM Assisted Assertion Generation for RTL Design Verification.” *arXiv preprint*, 2024[\[22\]](https://arxiv.org/abs/2409.15281#:~:text=step%20in%20verifying%20Register%20Transfer,we%20developed%20test%20cases%20to)[\[23\]](https://arxiv.org/abs/2409.15281#:~:text=validate%20the%20LLM,prone).
+
+* Shams Tarek *et al.* “BugWhisperer: Fine-Tuning LLMs for SoC Hardware Vulnerability Detection.” *IEEE VTS*, 2025[\[27\]](https://arxiv.org/html/2505.22878v1#:~:text=Language%20Model%20,enhancing%20the%20security%20verification%20process)[\[28\]](https://arxiv.org/html/2505.22878v1#:~:text=detect%20SoC,and%20mitigate%20critical%20security%20threats).
+
+* *Emergent Mind* summary of “SV-LLM: Automated SoC Security Verification”, 2025[\[33\]](https://www.emergentmind.com/topics/sv-llm#:~:text=%2A%20SV,enhancing%20overall%20hardware%20security%20verification)[\[35\]](https://www.emergentmind.com/topics/sv-llm#:~:text=4,checking%20expected%20regions%20of%20interest).
+
+* Luca Collini *et al.* “C2HLSC: Leveraging Large Language Models to Bridge the Software-to-Hardware Design Gap.” *ACM TODAES*, 2025[\[41\]](https://arxiv.org/abs/2412.00214#:~:text=%3E%20Abstract%3AHigh,we%20implement%20a%20preprocessing%20step)[\[45\]](https://arxiv.org/abs/2412.00214#:~:text=we%20implement%20a%20fully%20automated,achieved%20generating%20Verilog%20with%20LLMs).
+
+* Jitendra Bhandari *et al.* “Auto-SPICE: Automated SPICE Netlist Extraction from Analog Circuit Diagrams using LLMs.” *arXiv preprint*, 2024[\[48\]](https://arxiv.org/html/2411.14299v1#:~:text=Auto,step%20workflow%20to%20overcome)[\[52\]](https://arxiv.org/html/2411.14299v1#:~:text=To%20address%20this%20issue%2C%20a,are%20described%20in%20Section%C2%A0%202).
+
+* Gareth Halfacree, “Introducing the Microwatt OpenPOWER Core.” *Hackster.io News*, 2019[\[61\]](https://www.hackster.io/news/openpower-foundation-trumpets-fully-open-64-bit-microwatt-power-core-f54c5d5ad295#:~:text=OpenPOWER%20Foundation%20executive%20director%20Hugh,the%20POWER%20instruction%20set%20architecture)[\[69\]](https://www.hackster.io/news/openpower-foundation-trumpets-fully-open-64-bit-microwatt-power-core-f54c5d5ad295#:~:text=parties%20a%20way%20to%20play,It%E2%80%99s%20just%20a%20make%20away).
